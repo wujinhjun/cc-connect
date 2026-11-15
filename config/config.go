@@ -150,10 +150,11 @@ type QueueConfig struct {
 
 // WebhookConfig controls the external HTTP webhook endpoint.
 type WebhookConfig struct {
-	Enabled *bool  `toml:"enabled"`         // default false
-	Port    int    `toml:"port,omitempty"`  // listen port; default 9111
-	Token   string `toml:"token,omitempty"` // shared secret for authentication; empty = no auth
-	Path    string `toml:"path,omitempty"`  // URL path prefix; default "/hook"
+	ExecutionState string `toml:"execution_state,omitempty"` // private durable managed inbox; disabled when empty
+	Enabled        *bool  `toml:"enabled"`                   // default false
+	Port           int    `toml:"port,omitempty"`            // listen port; default 9111
+	Token          string `toml:"token,omitempty"`           // shared secret for authentication; empty = no auth
+	Path           string `toml:"path,omitempty"`            // URL path prefix; default "/hook"
 }
 
 // BridgeConfig controls the WebSocket bridge for external platform adapters.

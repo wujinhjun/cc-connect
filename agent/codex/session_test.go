@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1183,4 +1184,27 @@ func waitForFileLines(t *testing.T, path string, want int) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %d lines in %s", want, path)
+}
+
+func TestTerminateExecutionDoesNotAttestWhenCloseTimesOut(t *testing.T) {
+	oldClose, oldKill := codexSessionCloseTimeout, codexSessionForceKillWait
+	codexSessionCloseTimeout, codexSessionForceKillWait = 5*time.Millisecond, 5*time.Millisecond
+	defer func() { codexSessionCloseTimeout, codexSessionForceKillWait = oldClose, oldKill }()
+	cs, err := newCodexSession(context.Background(), "codex", nil, t.TempDir(), "", "", "", "", "", nil, "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs.wg.Add(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	err = cs.TerminateExecution(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Error("unjoined process was attested stopped", err)
+	}
+	cs.wg.Done()
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err = cs.TerminateExecution(ctx); err != nil {
+		t.Fatal("joined execution remained unresolved", err)
+	}
 }

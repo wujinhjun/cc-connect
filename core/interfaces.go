@@ -390,6 +390,20 @@ type AgentSession interface {
 	Close() error
 }
 
+// ManagedExecutionAgent opts in only when all sessions have a reliable
+// termination boundary. Adapters without this capability retain legacy behavior.
+type ManagedExecutionAgent interface{ SupportsManagedExecution() bool }
+
+// ExecutionPreparer arms per-attempt process ownership before sending a prompt.
+type ExecutionPreparer interface{ BeginExecution() error }
+
+// ExecutionTerminator is an optional stronger runtime boundary. A nil result
+// promises all agent/tool processes have been joined; Close alone may time out
+// silently on some adapters. Unsupported runtimes remain unresolved.
+type ExecutionTerminator interface {
+	TerminateExecution(context.Context) error
+}
+
 // PermissionResult represents the user's decision on a permission request.
 type PermissionResult struct {
 	Behavior     string         `json:"behavior"`               // "allow" or "deny"

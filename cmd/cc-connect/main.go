@@ -1025,6 +1025,29 @@ func main() {
 		engines[i].SetHeartbeatScheduler(heartbeatSched)
 	}
 
+	// Start webhook server if enabled
+	var webhookSrv *core.WebhookServer
+	if cfg.Webhook.Enabled != nil && *cfg.Webhook.Enabled {
+		port := cfg.Webhook.Port
+		if port <= 0 {
+			port = 9111
+		}
+		path := cfg.Webhook.Path
+		if path == "" {
+			path = "/hook"
+		}
+		webhookSrv = core.NewWebhookServer(port, cfg.Webhook.Token, path)
+		if cfg.Webhook.ExecutionState != "" {
+			if err := webhookSrv.EnableExecution(cfg.Webhook.ExecutionState); err != nil {
+				slog.Error("managed execution inbox", "error", err)
+				os.Exit(1)
+			}
+		}
+		for i, e := range engines {
+			webhookSrv.RegisterEngine(cfg.Projects[i].Name, e)
+		}
+	}
+
 	var startErrors []error
 	for _, e := range engines {
 		if err := e.Start(); err != nil {
@@ -1082,21 +1105,7 @@ func main() {
 		bridgeSrv.Start()
 	}
 
-	// Start webhook server if enabled
-	var webhookSrv *core.WebhookServer
-	if cfg.Webhook.Enabled != nil && *cfg.Webhook.Enabled {
-		port := cfg.Webhook.Port
-		if port <= 0 {
-			port = 9111
-		}
-		path := cfg.Webhook.Path
-		if path == "" {
-			path = "/hook"
-		}
-		webhookSrv = core.NewWebhookServer(port, cfg.Webhook.Token, path)
-		for i, e := range engines {
-			webhookSrv.RegisterEngine(cfg.Projects[i].Name, e)
-		}
+	if webhookSrv != nil {
 		webhookSrv.Start()
 	}
 

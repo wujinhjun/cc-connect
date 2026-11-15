@@ -2796,3 +2796,61 @@ type reasoningJourneyPlatform struct {
 func (p *reasoningJourneyPlatform) SetCardNavigationHandler(h CardNavigationHandler) {
 	p.navigation = h
 }
+
+// A durable external review request must survive a busy developer conversation,
+// execute after the user's turn, and remain visible in conversation history.
+func TestCUJ_A9_ManagedReviewWaitsForBusyConversation(t *testing.T) {
+	runtime := &managedCUJRuntime{events: make(chan Event, 8), started: make(chan struct{}), release: make(chan struct{})}
+	ws, e, p := executionTestServer(t, filepath.Join(t.TempDir(), "execution.json"), &resultAgent{session: runtime})
+	key := "test:thread"
+	// User action 1: begin an ordinary, slow task.
+	e.ReceiveMessage(p, &Message{SessionKey: key, Content: "develop", ReplyCtx: "reply", UserID: "user"})
+	select {
+	case <-runtime.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("ordinary task never started")
+	}
+	req := managedRequest("review", "attempt", 1)
+	req.Prompt = "review"
+	managedCall(t, ws, req, 200)
+	ws.execution.tick()
+	// User action 2: inspect status while the review is durably waiting.
+	e.ReceiveMessage(p, &Message{SessionKey: key, Content: "/status", ReplyCtx: "reply", UserID: "user"})
+	if strings.Contains(strings.Join(p.getSent(), "\n"), "review completed") {
+		t.Fatal("queued review ran over busy conversation")
+	}
+	close(runtime.release)
+	deadline := time.Now().Add(3 * time.Second)
+	for e.sessions.GetOrCreateActive(key).Busy() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	ws.execution.tick()
+	awaitManagedState(t, ws.execution, "attempt:attempt", "succeeded")
+	// User action 3: inspect history after the managed review finishes.
+	e.ReceiveMessage(p, &Message{SessionKey: key, Content: "/history", ReplyCtx: "reply", UserID: "user"})
+	visible := strings.Join(p.getSent(), "\n")
+	if !strings.Contains(visible, "develop completed") || !strings.Contains(visible, "review completed") {
+		t.Fatal("user lost ordinary or managed result", visible)
+	}
+}
+
+type managedCUJRuntime struct {
+	events           chan Event
+	started, release chan struct{}
+	once             sync.Once
+}
+
+func (s *managedCUJRuntime) Send(prompt, _ string, _ []ImageAttachment, _ []FileAttachment) error {
+	if strings.Contains(prompt, "develop") {
+		s.once.Do(func() { close(s.started) })
+		<-s.release
+	}
+	s.events <- Event{Type: EventResult, Content: prompt + " completed", Done: true}
+	return nil
+}
+func (s *managedCUJRuntime) RespondPermission(string, PermissionResult) error { return nil }
+func (s *managedCUJRuntime) Events() <-chan Event                             { return s.events }
+func (s *managedCUJRuntime) CurrentSessionID() string                         { return "managed-cuj" }
+func (s *managedCUJRuntime) Alive() bool                                      { return true }
+func (s *managedCUJRuntime) Close() error                                     { return nil }
+func (s *managedCUJRuntime) TerminateExecution(context.Context) error         { return nil }

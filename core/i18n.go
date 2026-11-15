@@ -206,6 +206,7 @@ const (
 	MsgSessionResumeUnsafe       MsgKey = "session_resume_unsafe"
 	MsgSessionCancelled          MsgKey = "session_cancelled"
 	MsgNoExecution               MsgKey = "no_execution"
+	MsgManagedExecutionBlocked   MsgKey = "managed_execution_blocked"
 	MsgPreviousProcessing        MsgKey = "previous_processing"
 	MsgQueueFull                 MsgKey = "queue_full"
 	MsgMessageQueued             MsgKey = "message_queued"
@@ -701,6 +702,13 @@ const (
 )
 
 var messages = map[MsgKey]map[Language]string{
+	MsgManagedExecutionBlocked: {
+		LangEnglish:            "A managed execution owns this session. Wait for confirmed completion, or ask the operator to resolve the old execution. /status and /stop remain available.",
+		LangChinese:            "受管执行正在占用此会话。请等待确认结束，或由操作者核查并解除旧执行；仍可使用 /status 和 /stop。",
+		LangTraditionalChinese: "受管執行正在占用此會話。請等待確認結束，或由操作者核查並解除舊執行；仍可使用 /status 和 /stop。",
+		LangJapanese:           "管理対象の実行がこのセッションを使用中です。終了確認を待つか、担当者に以前の実行の確認を依頼してください。/status と /stop は利用できます。",
+		LangSpanish:            "Una ejecución administrada controla esta sesión. Espere su finalización confirmada o pida al operador que resuelva la ejecución anterior. /status y /stop siguen disponibles.",
+	},
 	MsgStarting: {
 		LangEnglish:            "⏳ Processing...",
 		LangChinese:            "⏳ 处理中...",

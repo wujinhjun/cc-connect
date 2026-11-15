@@ -355,6 +355,8 @@ type RateLimitCfg struct {
 
 // Engine routes messages between platforms and the agent for a single project.
 type Engine struct {
+	executionGuardMu      sync.RWMutex
+	executionGuard        func(*Message) bool
 	name                  string
 	agent                 Agent
 	platforms             []Platform
@@ -552,6 +554,7 @@ type queuedMessage struct {
 
 // interactiveState tracks a running interactive agent session and its permission state.
 type interactiveState struct {
+	managedSend  *managedSendObserver
 	agentSession AgentSession
 	// busySession is the core.Session whose busy lock guards the in-flight
 	// turn. Set by getOrCreateInteractiveStateWith so /stop can release the
@@ -2973,6 +2976,13 @@ func (e *Engine) startMessageRecallMonitor(sessionKey string) context.CancelFunc
 }
 
 func (e *Engine) handleMessage(p Platform, msg *Message) {
+	e.executionGuardMu.RLock()
+	guard := e.executionGuard
+	e.executionGuardMu.RUnlock()
+	if guard != nil && guard(msg) {
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgManagedExecutionBlocked))
+		return
+	}
 	if msg.Recalled {
 		e.handleMessageRecall(p, msg)
 		return
@@ -4013,6 +4023,12 @@ func (e *Engine) processInteractiveMessage(p Platform, msg *Message, session *Se
 // lockGen is the generation returned by the TryLock that acquired this turn's
 // busy lock; it must be passed to every session.Unlock of this turn (custom 2026-09-12).
 func (e *Engine) processInteractiveMessageWith(p Platform, msg *Message, session *Session, agent Agent, sessions *SessionManager, interactiveKey string, workspaceDir string, ccSessionKey string, lockGen uint64) {
+	e.processInteractiveMessageWithState(p, msg, session, agent, sessions, interactiveKey, workspaceDir, ccSessionKey, lockGen, nil)
+}
+
+// A managed caller pins the runtime whose ownership/termination it tracks.
+// Ordinary callers keep the existing lookup behavior.
+func (e *Engine) processInteractiveMessageWithState(p Platform, msg *Message, session *Session, agent Agent, sessions *SessionManager, interactiveKey, workspaceDir, ccSessionKey string, lockGen uint64, pinned *interactiveState) {
 	// session.Unlock() is NOT deferred here — it is called explicitly in
 	// the drain loop below while holding state.mu to close the race window
 	// between "queue is empty" and "session unlocked". A deferred fallback
@@ -4042,7 +4058,10 @@ func (e *Engine) processInteractiveMessageWith(p Platform, msg *Message, session
 	if agent != e.agent {
 		agentOverride = agent
 	}
-	state := e.getOrCreateInteractiveStateWith(interactiveKey, p, msg.ReplyCtx, session, sessions, agentOverride, ccSessionKey)
+	state := pinned
+	if state == nil {
+		state = e.getOrCreateInteractiveStateWith(interactiveKey, p, msg.ReplyCtx, session, sessions, agentOverride, ccSessionKey)
+	}
 
 	// Set workspaceDir on the state for idle reaper identification
 	if workspaceDir != "" {
@@ -4130,18 +4149,29 @@ func (e *Engine) processInteractiveMessageWith(p Platform, msg *Message, session
 	state.fromVoice = msg.FromVoice
 	state.sideText = ""
 	as := state.agentSession // capture under lock to avoid race with cleanup
+	observer := state.managedSend
 	state.mu.Unlock()
 
 	// Run Send concurrently with processInteractiveEvents. Some agents block inside
 	// Send until the prompt turn finishes (e.g. ACP session/prompt); they may emit
 	// EventPermissionRequest while blocked — the event loop must run in parallel.
 	sendDone := make(chan error, 1)
+	if observer != nil {
+		observer.invoked.Store(true)
+	}
 	go func() {
+		if observer != nil {
+			defer close(observer.done)
+		}
 		if as == nil {
 			sendDone <- fmt.Errorf("agent session became nil")
 			return
 		}
-		sendDone <- as.Send(promptContent, msg.MessageID, msg.Images, msg.Files)
+		err := as.Send(promptContent, msg.MessageID, msg.Images, msg.Files)
+		if err == nil && observer != nil {
+			err = observer.start()
+		}
+		sendDone <- err
 	}()
 
 	e.processInteractiveEvents(state, session, sessions, interactiveKey, msg.MessageID, turnStart, stopTyping, sendDone, msg.ReplyCtx, lockGen)
@@ -4886,7 +4916,17 @@ func (e *Engine) closeAgentSession(sessionKey string, agentSession AgentSession,
 	done := make(chan struct{})
 	var closeErr error
 	go func() {
-		closeErr = agentSession.Close()
+		if capability, ok := agentSession.(ManagedExecutionAgent); ok && capability.SupportsManagedExecution() {
+			if terminator, ok := agentSession.(ExecutionTerminator); ok {
+				ctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
+				defer cancel()
+				closeErr = terminator.TerminateExecution(ctx)
+			} else {
+				closeErr = agentSession.Close()
+			}
+		} else {
+			closeErr = agentSession.Close()
+		}
 		close(done)
 	}()
 

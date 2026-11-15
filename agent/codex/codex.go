@@ -850,3 +850,5 @@ func (a *Agent) PermissionModes() []core.PermissionModeInfo {
 			DescZh: "跳过所有审批和沙箱（危险）"},
 	}
 }
+
+func (a *Agent) SupportsManagedExecution() bool { return true }

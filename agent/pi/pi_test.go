@@ -3,6 +3,7 @@ package pi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -3461,5 +3462,27 @@ func TestSupportedThinkingLevels_BareIDPrefersDefaultProvider(t *testing.T) {
 	}
 	if got := thinkingLevelsForDef(m); fmt.Sprint(got) != fmt.Sprint([]string{"low", "high", "max"}) {
 		t.Fatalf("levels = %v, want [low high max]", got)
+	}
+}
+
+func TestPiSessionConcurrentCloseIsIdempotent(t *testing.T) {
+	s, err := newPiSession(context.Background(), "echo", nil, t.TempDir(), "", "default", "", false, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() { done <- s.Close() }()
+	}
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s.Alive() {
+		t.Fatal("session remained alive")
+	}
+	if err := s.TerminateExecution(context.Background()); !errors.Is(err, core.ErrNotSupported) {
+		t.Fatal("JSON mode claimed strong termination support", err)
 	}
 }

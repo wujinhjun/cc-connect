@@ -16,24 +16,25 @@ import (
 // WebhookServer exposes an HTTP endpoint for external systems
 // (git hooks, CI/CD, file watchers, etc.) to trigger agent or shell actions.
 type WebhookServer struct {
-	port    int
-	token   string
-	path    string
-	server  *http.Server
-	engines map[string]*Engine
-	mu      sync.RWMutex
+	execution *executionInbox
+	port      int
+	token     string
+	path      string
+	server    *http.Server
+	engines   map[string]*Engine
+	mu        sync.RWMutex
 }
 
 // WebhookRequest is the JSON body for POST /hook.
 type WebhookRequest struct {
-	Event      string `json:"event,omitempty"`       // event name for logging (e.g. "git:commit")
-	Project    string `json:"project,omitempty"`      // target project; optional if single project
-	SessionKey string `json:"session_key"`            // target session key (required)
-	Prompt     string `json:"prompt,omitempty"`       // agent prompt (mutually exclusive with exec)
-	Exec       string `json:"exec,omitempty"`         // shell command (mutually exclusive with prompt)
-	WorkDir    string `json:"work_dir,omitempty"`     // working dir for exec
-	Silent     bool   `json:"silent,omitempty"`       // suppress notification
-	Payload    any    `json:"payload,omitempty"`      // arbitrary extra data; appended to prompt context
+	Event      string `json:"event,omitempty"`    // event name for logging (e.g. "git:commit")
+	Project    string `json:"project,omitempty"`  // target project; optional if single project
+	SessionKey string `json:"session_key"`        // target session key (required)
+	Prompt     string `json:"prompt,omitempty"`   // agent prompt (mutually exclusive with exec)
+	Exec       string `json:"exec,omitempty"`     // shell command (mutually exclusive with prompt)
+	WorkDir    string `json:"work_dir,omitempty"` // working dir for exec
+	Silent     bool   `json:"silent,omitempty"`   // suppress notification
+	Payload    any    `json:"payload,omitempty"`  // arbitrary extra data; appended to prompt context
 }
 
 func NewWebhookServer(port int, token, path string) *WebhookServer {
@@ -58,11 +59,18 @@ func (ws *WebhookServer) RegisterEngine(name string, e *Engine) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	ws.engines[name] = e
+	if ws.execution != nil {
+		ws.execution.installGuard(name, e)
+	}
 }
 
 func (ws *WebhookServer) Start() {
 	mux := http.NewServeMux()
 	mux.HandleFunc(ws.path, ws.handleHook)
+	mux.HandleFunc(ws.path+"/execution", ws.handleExecution)
+	if ws.execution != nil {
+		ws.execution.start()
+	}
 
 	addr := fmt.Sprintf(":%d", ws.port)
 	ws.server = &http.Server{Addr: addr, Handler: mux}
@@ -76,6 +84,9 @@ func (ws *WebhookServer) Start() {
 }
 
 func (ws *WebhookServer) Stop() {
+	if ws.execution != nil {
+		ws.execution.close()
+	}
 	if ws.server != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

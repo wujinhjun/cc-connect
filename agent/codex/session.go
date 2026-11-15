@@ -47,6 +47,8 @@ type codexSession struct {
 	closeOnce      sync.Once
 	cmdMu          sync.Mutex
 	cmds           map[*exec.Cmd]struct{}
+	managed        bool
+	managedCmds    []*exec.Cmd
 
 	pendingMsgs []string // buffered agent_message texts awaiting classification
 
@@ -1028,6 +1030,9 @@ func (cs *codexSession) addCmd(cmd *exec.Cmd) {
 	cs.cmdMu.Lock()
 	defer cs.cmdMu.Unlock()
 	cs.cmds[cmd] = struct{}{}
+	if cs.managed {
+		cs.managedCmds = append(cs.managedCmds, cmd)
+	}
 }
 
 func (cs *codexSession) removeCmd(cmd *exec.Cmd) {
@@ -1090,3 +1095,41 @@ func truncate(s string, maxRunes int) string {
 	}
 	return string([]rune(s)[:maxRunes]) + "..."
 }
+
+// TerminateExecution waits beyond Close's best-effort fallback before attesting
+// that the managed attempt can no longer act.
+func (cs *codexSession) BeginExecution() error {
+	cs.cmdMu.Lock()
+	defer cs.cmdMu.Unlock()
+	cs.managed = true
+	cs.managedCmds = nil
+	for cmd := range cs.cmds {
+		cs.managedCmds = append(cs.managedCmds, cmd)
+	}
+	return nil
+}
+func (cs *codexSession) TerminateExecution(ctx context.Context) error {
+	done := make(chan error, 1)
+	cs.cmdMu.Lock()
+	cmds := append([]*exec.Cmd{}, cs.managedCmds...)
+	for cmd := range cs.cmds {
+		cmds = append(cmds, cmd)
+	}
+	cs.cmdMu.Unlock()
+	go func() {
+		_ = cs.Close()
+		cs.wg.Wait()
+		cs.cmdMu.Lock()
+		cmds = append(cmds, cs.managedCmds...)
+		cs.cmdMu.Unlock()
+		done <- forceKillAllCmds(cmds)
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (cs *codexSession) SupportsManagedExecution() bool { return true }

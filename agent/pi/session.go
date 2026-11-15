@@ -52,6 +52,8 @@ func (w *cappedStderrWriter) String() string {
 // In "rpc" mode: spawns a persistent `pi --mode rpc` process with stdin/stdout
 // JSONL protocol, supporting extension_ui_request/response for permissions.
 type piSession struct {
+	closeMu   sync.Mutex
+	closeDone chan struct{}
 	cmd       string
 	extraArgs []string // extra args from cmd, prepended before pi args
 	workDir   string
@@ -1227,6 +1229,17 @@ func (s *piSession) Alive() bool {
 }
 
 func (s *piSession) Close() error {
+	s.closeMu.Lock()
+	if s.closeDone != nil {
+		done := s.closeDone
+		s.closeMu.Unlock()
+		<-done
+		return nil
+	}
+	done := make(chan struct{})
+	s.closeDone = done
+	s.closeMu.Unlock()
+	defer close(done)
 	s.alive.Store(false)
 
 	// Cancel context to interrupt any in-flight Send() or readLoopRPC.
@@ -1413,3 +1426,22 @@ func extractToolInput(item map[string]any) string {
 	}
 	return s
 }
+
+func (s *piSession) TerminateExecution(ctx context.Context) error {
+	if !s.rpc {
+		return core.ErrNotSupported
+	}
+	if err := forceKillCmd(s.rpcCmd); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- s.Close() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *piSession) SupportsManagedExecution() bool { return s.rpc }

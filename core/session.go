@@ -57,6 +57,7 @@ type Session struct {
 	ExplicitActivatedAt time.Time `json:"explicit_activated_at,omitempty"`
 
 	mu        sync.Mutex `json:"-"`
+	managed   bool       `json:"-"`
 	busy      bool       `json:"-"`
 	busySince time.Time  `json:"-"` // custom 2026-09-12: when the busy lock was acquired (stale-lock self-heal)
 	lockGen   uint64     `json:"-"` // custom 2026-09-12: lock generation, invalidates late unlocks after BreakStaleLock
@@ -103,7 +104,7 @@ func (s *Session) unlock(update bool, gen uint64) {
 	// written against the old bool Unlock() API. All production callers pass
 	// the gen they captured from TryLock. TODO: migrate the remaining
 	// Unlock(0) test call sites and drop this shim.
-	if gen != 0 && gen != s.lockGen {
+	if s.managed || (gen != 0 && gen != s.lockGen) {
 		// Late unlock after BreakStaleLock reassigned the lock to a newer
 		// turn: dropping it is the only safe option — applying it would clear
 		// busy underneath the new holder and let a third turn run concurrently.
@@ -125,7 +126,7 @@ func (s *Session) unlock(update bool, gen uint64) {
 func (s *Session) BreakStaleLock(maxHeld time.Duration) (time.Time, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.busy || s.busySince.IsZero() {
+	if s.managed || !s.busy || s.busySince.IsZero() {
 		return time.Time{}, false
 	}
 	if time.Since(s.busySince) > maxHeld {
@@ -152,7 +153,7 @@ const busyStaleLockMaxHeld = 2 * time.Minute
 func (s *Session) ForceUnlock() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.busy {
+	if s.managed || !s.busy {
 		return false
 	}
 	s.busy = false
@@ -1114,4 +1115,28 @@ func (sm *SessionManager) PruneEmptySessions() int {
 		slog.Info("session: pruned empty sessions", "removed", removed)
 	}
 	return removed
+}
+
+// Managed turns retain exclusive ownership through process termination and the
+// durable terminal receipt. Ordinary Unlock and stale-lock recovery cannot
+// release this fence; only the execution inbox may release it.
+func (s *Session) tryManagedLock() (uint64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.busy {
+		return 0, false
+	}
+	s.busy, s.managed, s.busySince = true, true, time.Now()
+	s.lockGen++
+	return s.lockGen, true
+}
+func (s *Session) releaseManaged(gen uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.managed || s.lockGen != gen {
+		return
+	}
+	s.busy, s.managed = false, false
+	s.busySince = time.Time{}
+	s.UpdatedAt = time.Now()
 }

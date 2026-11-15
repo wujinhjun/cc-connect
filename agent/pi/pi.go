@@ -1144,3 +1144,5 @@ func readPiHistory(path string, limit int) ([]core.HistoryEntry, error) {
 	}
 	return all, nil
 }
+
+func (a *Agent) SupportsManagedExecution() bool { a.mu.Lock(); defer a.mu.Unlock(); return a.rpc }

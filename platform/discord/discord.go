@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,7 @@ type progressPlatform struct {
 }
 
 type Platform struct {
+	threadRename               *threadRenameBridge
 	token                      string
 	allowFrom                  string
 	guildID                    string // optional: per-guild registration (instant) vs global (up to 1h propagation)
@@ -128,7 +130,15 @@ func New(opts map[string]any) (core.Platform, error) {
 		proxyU = u
 	}
 
+	var threadRename *threadRenameBridge
+	if socket, _ := opts["thread_rename_socket"].(string); socket != "" {
+		if !filepath.IsAbs(socket) {
+			return nil, fmt.Errorf("discord: thread_rename_socket must be absolute")
+		}
+		threadRename = newThreadRenameBridge(socket)
+	}
 	base := &Platform{
+		threadRename:               threadRename,
 		token:                      token,
 		allowFrom:                  allowFrom,
 		guildID:                    guildID,
@@ -472,7 +482,13 @@ func (p *Platform) RegisterCommands(commands []core.BotCommandInfo) error {
 	}
 
 	var cmds []*discordgo.ApplicationCommand
+	if p.threadRename != nil {
+		cmds = append(cmds, &discordgo.ApplicationCommand{Name: renameCommand, Description: core.NewI18n(core.LangEnglish).T(core.MsgThreadTitleDescription)})
+	}
 	for _, c := range commands {
+		if p.threadRename != nil && c.Command == renameCommand {
+			continue
+		}
 		if len(c.Command) > 32 {
 			slog.Warn("discord: command name > 32 skip " + c.Command)
 			continue
@@ -820,9 +836,18 @@ func (p *Platform) handleInteraction(s *discordgo.Session, i *discordgo.Interact
 
 	switch i.Type {
 	case discordgo.InteractionMessageComponent:
+		customID := i.MessageComponentData().CustomID
+		if p.threadRename != nil && strings.HasPrefix(customID, renameButtonPrefix) {
+			p.chooseThreadTitle(s, i, userID, customID)
+			return
+		}
 		p.handleComponentInteraction(s, i, userID, userName)
 		return
 	case discordgo.InteractionApplicationCommand:
+		if p.threadRename != nil && i.ApplicationCommandData().Name == renameCommand {
+			p.suggestThreadTitles(s, i, userID)
+			return
+		}
 	default:
 		return
 	}

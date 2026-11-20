@@ -700,7 +700,91 @@ const (
 	MsgAgentRelayToolPrompt MsgKey = "agent_relay_tool_prompt"
 )
 
+const (
+	MsgThreadTitleDescription   MsgKey = "thread_title_description"
+	MsgThreadTitleLoading       MsgKey = "thread_title_loading"
+	MsgThreadTitleGenerateError MsgKey = "thread_title_generateerror"
+	MsgThreadTitleCard          MsgKey = "thread_title_card"
+	MsgThreadTitleApply         MsgKey = "thread_title_apply"
+	MsgThreadTitleKeep          MsgKey = "thread_title_keep"
+	MsgThreadTitleExpired       MsgKey = "thread_title_expired"
+	MsgThreadTitleApplyError    MsgKey = "thread_title_applyerror"
+	MsgThreadTitleKept          MsgKey = "thread_title_kept"
+	MsgThreadTitleApplied       MsgKey = "thread_title_applied"
+)
+
 var messages = map[MsgKey]map[Language]string{
+	MsgThreadTitleDescription: {
+		LangEnglish:            "Suggest three names for this thread",
+		LangChinese:            "为当前讨论串推荐三个标题",
+		LangTraditionalChinese: "為目前討論串推薦三個標題",
+		LangJapanese:           "スレッドのタイトルを3つ提案",
+		LangSpanish:            "Sugiere tres nombres para este hilo",
+	},
+	MsgThreadTitleLoading: {
+		LangEnglish:            "Reading this thread and generating titles…",
+		LangChinese:            "正在读取讨论串并生成标题…",
+		LangTraditionalChinese: "正在讀取討論串並產生標題…",
+		LangJapanese:           "スレッドを読み込み、タイトルを生成しています…",
+		LangSpanish:            "Leyendo el hilo y generando títulos…",
+	},
+	MsgThreadTitleGenerateError: {
+		LangEnglish:            "Could not generate titles: %s",
+		LangChinese:            "无法生成标题：%s",
+		LangTraditionalChinese: "無法產生標題：%s",
+		LangJapanese:           "タイトルを生成できませんでした：%s",
+		LangSpanish:            "No se pudieron generar los títulos: %s",
+	},
+	MsgThreadTitleCard: {
+		LangEnglish:            "Current title: %s\n\nChoose a new title:\n",
+		LangChinese:            "当前标题：%s\n\n请选择新标题：\n",
+		LangTraditionalChinese: "目前標題：%s\n\n請選擇新標題：\n",
+		LangJapanese:           "現在のタイトル：%s\n\n新しいタイトルを選んでください：\n",
+		LangSpanish:            "Título actual: %s\n\nElige un título nuevo:\n",
+	},
+	MsgThreadTitleApply: {
+		LangEnglish:            "Apply %s",
+		LangChinese:            "应用 %s",
+		LangTraditionalChinese: "套用 %s",
+		LangJapanese:           "%s を適用",
+		LangSpanish:            "Aplicar %s",
+	},
+	MsgThreadTitleKeep: {
+		LangEnglish:            "Keep current title",
+		LangChinese:            "保留原名",
+		LangTraditionalChinese: "保留原名",
+		LangJapanese:           "現在のタイトルを保持",
+		LangSpanish:            "Conservar el título actual",
+	},
+	MsgThreadTitleExpired: {
+		LangEnglish:            "This title choice is no longer available. Run /rename-thread again.",
+		LangChinese:            "这个标题选项已失效，请重新执行 /rename-thread。",
+		LangTraditionalChinese: "這個標題選項已失效，請重新執行 /rename-thread。",
+		LangJapanese:           "この候補は無効です。/rename-thread をもう一度実行してください。",
+		LangSpanish:            "Esta opción ya no está disponible. Vuelve a ejecutar /rename-thread.",
+	},
+	MsgThreadTitleApplyError: {
+		LangEnglish:            "Could not apply the title: %s",
+		LangChinese:            "无法应用标题：%s",
+		LangTraditionalChinese: "無法套用標題：%s",
+		LangJapanese:           "タイトルを適用できませんでした：%s",
+		LangSpanish:            "No se pudo aplicar el título: %s",
+	},
+	MsgThreadTitleKept: {
+		LangEnglish:            "Kept the current title.",
+		LangChinese:            "已保留原标题。",
+		LangTraditionalChinese: "已保留原標題。",
+		LangJapanese:           "現在のタイトルを保持しました。",
+		LangSpanish:            "Se conservó el título actual.",
+	},
+	MsgThreadTitleApplied: {
+		LangEnglish:            "Renamed: %s → %s",
+		LangChinese:            "已改名：%s → %s",
+		LangTraditionalChinese: "已重新命名：%s → %s",
+		LangJapanese:           "タイトルを変更しました：%s → %s",
+		LangSpanish:            "Título cambiado: %s → %s",
+	},
+
 	MsgStarting: {
 		LangEnglish:            "⏳ Processing...",
 		LangChinese:            "⏳ 处理中...",

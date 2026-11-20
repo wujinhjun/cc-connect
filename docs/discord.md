@@ -309,3 +309,7 @@ Check:
 - [Telegram Setup](./telegram.md)
 - [Slack Setup](./slack.md)
 - [Back to README](../README.md)
+
+### Thread titles with Craftworks
+
+Set `thread_rename_socket` in the Discord platform options to the absolute path of the local Craftworks daemon's Unix socket. With the matching Craftworks thread-rename configuration, `/rename-thread` shows three title suggestions privately to the invoker. Choosing one applies it to the current thread. The command uses the Discord platform's existing `allow_from` list.

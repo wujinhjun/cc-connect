@@ -34,9 +34,9 @@ func TestRenameThreadCommandAndButton(t *testing.T) {
 			if input.Choice != 2 {
 				t.Fatalf("choose = %d", input.Choice)
 			}
-			fmt.Fprint(res, `{"old_title":"Old title","new_title":"Second choice"}`)
+			fmt.Fprint(res, `{"old_title":"**Old title**","new_title":"Release ||notes||"}`)
 		} else {
-			fmt.Fprintf(res, `{"id":"%s","current_title":"Old title","titles":["First choice","Second choice","Third choice"]}`, proposal)
+			fmt.Fprintf(res, `{"id":"%s","current_title":"**Old title**","titles":["First choice","Release ||notes||","Third choice"]}`, proposal)
 		}
 		return res.Result(), nil
 	})}}
@@ -71,11 +71,14 @@ func TestRenameThreadCommandAndButton(t *testing.T) {
 		} else if strings.HasSuffix(req.URL.Path, "/messages/@original") {
 			discordCalls = append(discordCalls, "edit")
 			if strings.Contains(payload.Content, "Choose a new title") {
+				if !strings.Contains(payload.Content, `\*\*Old title\*\*`) || !strings.Contains(payload.Content, `2. Release \|\|notes\|\|`) {
+					t.Errorf("unexpected title text on the card %q", payload.Content)
+				}
 				if len(payload.Components) != 1 || len(payload.Components[0].Components) != 4 ||
 					payload.Components[0].Components[1].CustomID != renameButtonPrefix+proposal+":2" {
 					t.Errorf("unexpected card components %+v", payload.Components)
 				}
-			} else if !strings.Contains(payload.Content, "Old title → Second choice") || len(payload.Components) != 0 {
+			} else if !strings.Contains(payload.Content, `\*\*Old title\*\* → Release \|\|notes\|\|`) || len(payload.Components) != 0 {
 				t.Errorf("unexpected result card %q", payload.Content)
 			}
 			fmt.Fprint(res, `{"id":"msg-1","channel_id":"thread-1"}`)

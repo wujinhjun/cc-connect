@@ -120,11 +120,11 @@ func titleCard(local *core.I18n, proposal titleProposal) (string, []discordgo.Me
 		return "", nil, fmt.Errorf("Craftworks returned invalid title candidates")
 	}
 	var content strings.Builder
-	content.WriteString(local.Tf(core.MsgThreadTitleCard, proposal.CurrentTitle))
+	content.WriteString(local.Tf(core.MsgThreadTitleCard, literalThreadTitle(proposal.CurrentTitle)))
 	var buttons []discordgo.MessageComponent
 	for index, title := range proposal.Titles {
 		choice := strconv.Itoa(index + 1)
-		fmt.Fprintf(&content, "%s. %s\n", choice, title)
+		fmt.Fprintf(&content, "%s. %s\n", choice, literalThreadTitle(title))
 		buttons = append(buttons, discordgo.Button{
 			Label: local.Tf(core.MsgThreadTitleApply, choice), Style: discordgo.PrimaryButton,
 			CustomID: renameButtonPrefix + proposal.ID + ":" + choice,
@@ -135,6 +135,20 @@ func titleCard(local *core.I18n, proposal titleProposal) (string, []discordgo.Me
 		CustomID: renameButtonPrefix + proposal.ID + ":0",
 	})
 	return content.String(), []discordgo.MessageComponent{discordgo.ActionsRow{Components: buttons}}, nil
+}
+
+// literalThreadTitle escapes Discord formatting while preserving the title shown to the user.
+func literalThreadTitle(title string) string {
+	var escaped strings.Builder
+	escaped.Grow(len(title))
+	for _, char := range title {
+		switch char {
+		case '\\', '`', '*', '_', '~', '|', '[', ']', '(', ')', '<', '>', '#':
+			escaped.WriteByte('\\')
+		}
+		escaped.WriteRune(char)
+	}
+	return escaped.String()
 }
 
 func validProposalID(id string) bool {
@@ -187,7 +201,7 @@ func (p *Platform) chooseThreadTitle(s *discordgo.Session, i *discordgo.Interact
 		return
 	}
 	p.channelNameCache.Delete(i.ChannelID)
-	editThreadTitleCard(s, i, local.Tf(core.MsgThreadTitleApplied, result.OldTitle, result.NewTitle), nil)
+	editThreadTitleCard(s, i, local.Tf(core.MsgThreadTitleApplied, literalThreadTitle(result.OldTitle), literalThreadTitle(result.NewTitle)), nil)
 }
 
 func editThreadTitleCard(s *discordgo.Session, i *discordgo.InteractionCreate, content string, components []discordgo.MessageComponent) {
